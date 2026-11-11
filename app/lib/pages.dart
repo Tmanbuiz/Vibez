@@ -24,6 +24,63 @@ Future<bool> confirmSingingConversion(BuildContext context) async {
   return result == true;
 }
 
+Widget studioHero({
+  required IconData icon,
+  required String eyebrow,
+  required String title,
+  required String subtitle,
+}) {
+  return Container(
+    margin: const EdgeInsets.only(top: 10, bottom: 18),
+    padding: const EdgeInsets.all(18),
+    decoration: BoxDecoration(
+      gradient: const LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [Color(0xFF211633), Color(0xFF121826), Color(0xFF11121A)],
+      ),
+      borderRadius: BorderRadius.circular(22),
+      border: Border.all(color: const Color(0xFF39304A)),
+      boxShadow: const [
+        BoxShadow(color: Color(0x221C0E31), blurRadius: 22, offset: Offset(0, 10)),
+      ],
+    ),
+    child: Row(
+      children: [
+        Container(
+          width: 54,
+          height: 54,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(17),
+            gradient: const LinearGradient(
+              colors: [Color(0xFFB55CFF), Color(0xFF36CFE8)],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+          ),
+          child: Icon(icon, color: Colors.white, size: 27),
+        ),
+        const SizedBox(width: 15),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                eyebrow.toUpperCase(),
+                style: const TextStyle(fontSize: 9, letterSpacing: 1.7, fontWeight: FontWeight.w800, color: Color(0xFFCDB2FF)),
+              ),
+              const SizedBox(height: 5),
+              Text(title, style: const TextStyle(fontSize: 19, height: 1.12, fontWeight: FontWeight.w800)),
+              const SizedBox(height: 5),
+              Text(subtitle, style: const TextStyle(fontSize: 12, height: 1.35, color: Color(0xFFB4B2C2))),
+            ],
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
 // ---------------------------------------------------------------- Music
 class MusicPage extends StatefulWidget {
   const MusicPage({super.key});
@@ -146,7 +203,12 @@ class _MusicPageState extends State<MusicPage> {
   @override
   Widget build(BuildContext context) {
     return ListView(padding: _pad, children: [
-      section('Music'),
+      studioHero(
+        icon: Icons.graphic_eq_rounded,
+        eyebrow: 'Music studio',
+        title: 'Your sound, your story.',
+        subtitle: 'Shape a vibe, add lyrics, and make a track that feels like you.',
+      ),
       ModelPicker(models: models, value: model, error: loadErr, onChanged: (v) => setState(() => model = v)),
       const SizedBox(height: 12),
       TextField(controller: prompt, minLines: 2, maxLines: 5, decoration: const InputDecoration(labelText: 'Describe the song (style, mood, genre)')),
@@ -259,7 +321,12 @@ class _ImagePageState extends State<ImagePage> {
   @override
   Widget build(BuildContext context) {
     return ListView(padding: _pad, children: [
-      section('Image'),
+      studioHero(
+        icon: Icons.auto_awesome_mosaic_rounded,
+        eyebrow: 'Visual studio',
+        title: 'Give the idea a look.',
+        subtitle: 'Turn a short description into artwork for your next release.',
+      ),
       ModelPicker(models: models, value: model, error: loadErr, onChanged: (v) => setState(() => model = v)),
       const SizedBox(height: 12),
       TextField(controller: prompt, minLines: 2, maxLines: 6, decoration: const InputDecoration(labelText: 'Describe the image')),
@@ -358,7 +425,12 @@ class _VideoPageState extends State<VideoPage> {
   @override
   Widget build(BuildContext context) {
     return ListView(padding: _pad, children: [
-      section('Video'),
+      studioHero(
+        icon: Icons.movie_creation_outlined,
+        eyebrow: 'Motion studio',
+        title: 'Bring the scene to life.',
+        subtitle: 'Describe a moment and create a short visual to go with your sound.',
+      ),
       ModelPicker(models: models, value: model, error: loadErr, onChanged: (v) => setState(() => model = v)),
       const SizedBox(height: 12),
       TextField(controller: prompt, minLines: 2, maxLines: 6, decoration: const InputDecoration(labelText: 'Describe the video')),
@@ -525,7 +597,12 @@ class _VoicePageState extends State<VoicePage> {
   Widget build(BuildContext context) {
     final usable = voices.where((x) => x['expired'] != true).toList();
     return ListView(padding: _pad, children: [
-      section('Speak in your voice'),
+      studioHero(
+        icon: Icons.mic_none_rounded,
+        eyebrow: 'Voice studio',
+        title: 'Make it sound like you.',
+        subtitle: 'Keep speech cloning and singing profiles separate, with clear controls for each.',
+      ),
       if (usable.isEmpty)
         const Text('No voices yet. Add one below.', style: TextStyle(color: Colors.white54))
       else
@@ -679,7 +756,12 @@ class _LibraryPageState extends State<LibraryPage> {
     return RefreshIndicator(
       onRefresh: _load,
       child: ListView(padding: _pad, children: [
-        section('Library'),
+        studioHero(
+          icon: Icons.library_music_rounded,
+          eyebrow: 'Your library',
+          title: 'All your creations, together.',
+          subtitle: 'Pick up where you left off and replay finished tracks.',
+        ),
         Wrap(spacing: 8, children: [
           for (final k in ['all', 'music', 'image', 'video', 'speech'])
             ChoiceChip(label: Text(k), selected: filter == k, onSelected: (_) => setState(() => filter = k)),
