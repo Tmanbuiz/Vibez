@@ -42,7 +42,7 @@ npx wrangler secret put SINGING_SERVICE_TOKEN
 npx wrangler deploy
 ~~~
 
-Apply the D1 schema update with the repository's existing deployment steps. Do not put either service token in the Flutter app or a committed file.
+Apply the singers table to your existing database with `npx wrangler d1 execute tmanvibez --remote --file schema.sql` from the `worker/` directory. Do not put either service token in the Flutter app or a committed file.
 
 ## API contract
 
