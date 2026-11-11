@@ -1,7 +1,10 @@
-name: Build app (APK + web)
+name: Build Vibez (APK, web, iOS)
 
 on:
   push:
+    branches: [main, feature/sing-in-my-voice]
+    paths: ['app/**', '.github/workflows/build-app.yml']
+  pull_request:
     branches: [main]
     paths: ['app/**', '.github/workflows/build-app.yml']
   workflow_dispatch:
@@ -10,7 +13,8 @@ permissions:
   contents: write
 
 jobs:
-  build:
+  android-web:
+    name: Android APK and web
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -28,24 +32,21 @@ jobs:
           channel: stable
           cache: true
 
-      # The repo only keeps lib/ and pubspec.yaml; platform folders are generated here.
       - name: Generate platform folders
         run: flutter create --project-name tmanvibez_ai --org com.tmanvibez --platforms=android,ios,web .
 
-      - name: Keep our own source files (flutter create must not replace them)
+      - name: Keep repository source files
         working-directory: .
         run: |
           git checkout -- app/lib app/pubspec.yaml
           rm -rf app/test
 
-      - name: Android setup (internet permission + app name)
+      - name: Android setup
         run: |
           sed -i 's#<application#<uses-permission android:name="android.permission.INTERNET"/>\n    <application#' android/app/src/main/AndroidManifest.xml
-          sed -i 's#android:label="[^"]*"#android:label="TmanVibez AI"#' android/app/src/main/AndroidManifest.xml
+          sed -i 's#android:label="[^"]*"#android:label="Vibez AI Studio"#' android/app/src/main/AndroidManifest.xml
 
-      # Some plugins are compiled against an older Android SDK than their own dependencies need.
-      # Force every Android module to compile against SDK 36.
-      - name: Gradle init script (compileSdk 36 everywhere)
+      - name: Set Android compile SDK
         working-directory: .
         run: |
           mkdir -p ~/.gradle/init.d
@@ -54,7 +55,6 @@ jobs:
             p.afterEvaluate {
               if (p.extensions.findByName('android') != null) {
                 p.android.compileSdkVersion 36
-                // the lint tool crashes inside some plugins; release APKs don't need it
                 p.android.lint {
                   checkReleaseBuilds = false
                   abortOnError = false
@@ -65,30 +65,141 @@ jobs:
           EOF
 
       - run: flutter pub get
+      - name: Generate launcher icons
+        run: dart run flutter_launcher_icons
 
       - name: Build web
         run: flutter build web --release
 
-      - name: Build APK
+      - name: Build Android APK
         run: flutter build apk --release
 
       - uses: actions/upload-artifact@v4
         with:
-          name: tmanvibez-ai-apk
+          name: vibez-ai-apk
           path: app/build/app/outputs/flutter-apk/app-release.apk
 
       - uses: actions/upload-artifact@v4
         with:
-          name: tmanvibez-ai-web
+          name: vibez-ai-web
           path: app/build/web
 
-      - name: Publish APK as a GitHub Release
+      - name: Publish latest APK release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         working-directory: .
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: \${{ github.token }}
         run: |
-          cp app/build/app/outputs/flutter-apk/app-release.apk TmanVibezAI.apk
-          gh release delete latest --yes --cleanup-tag --repo ${{ github.repository }} || true
-          gh release create latest TmanVibezAI.apk --repo ${{ github.repository }} --target ${{ github.sha }} \
-            --title "TmanVibez AI (latest Android build)" \
-            --notes "Download TmanVibezAI.apk on your Android phone and install it. Built from ${{ github.sha }}."
+          cp app/build/app/outputs/flutter-apk/app-release.apk VibezAI.apk
+          gh release delete latest --yes --cleanup-tag --repo \${{ github.repository }} || true
+          gh release create latest VibezAI.apk --repo \${{ github.repository }} --target \${{ github.sha }} \
+            --title "Vibez AI Studio (latest Android build)" \
+            --notes "Download VibezAI.apk on your Android phone and install it. Built from \${{ github.sha }}."
+
+  ios:
+    name: iOS IPA
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Generate iOS project
+        run: flutter create --project-name tmanvibez_ai --org com.tmanvibez --platforms=ios .
+
+      - name: Keep repository source files
+        working-directory: .
+        run: git checkout -- app/lib app/pubspec.yaml
+
+      - run: flutter pub get
+      - name: Generate iOS launcher icons
+        run: dart run flutter_launcher_icons
+
+      - name: Check Apple signing configuration
+        id: signing
+        env:
+          IOS_CERTIFICATE_BASE64: \${{ secrets.IOS_CERTIFICATE_BASE64 }}
+          IOS_CERTIFICATE_PASSWORD: \${{ secrets.IOS_CERTIFICATE_PASSWORD }}
+          IOS_PROVISIONING_PROFILE_BASE64: \${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 }}
+          IOS_TEAM_ID: \${{ secrets.IOS_TEAM_ID }}
+          IOS_BUNDLE_ID: \${{ secrets.IOS_BUNDLE_ID }}
+        run: |
+          if [[ -n "$IOS_CERTIFICATE_BASE64" && -n "$IOS_CERTIFICATE_PASSWORD" && -n "$IOS_PROVISIONING_PROFILE_BASE64" && -n "$IOS_TEAM_ID" && -n "$IOS_BUNDLE_ID" ]]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build signed IPA
+        if: steps.signing.outputs.ready == 'true'
+        env:
+          IOS_CERTIFICATE_BASE64: \${{ secrets.IOS_CERTIFICATE_BASE64 }}
+          IOS_CERTIFICATE_PASSWORD: \${{ secrets.IOS_CERTIFICATE_PASSWORD }}
+          IOS_PROVISIONING_PROFILE_BASE64: \${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 }}
+          IOS_TEAM_ID: \${{ secrets.IOS_TEAM_ID }}
+          IOS_BUNDLE_ID: \${{ secrets.IOS_BUNDLE_ID }}
+        run: |
+          KEYCHAIN_PATH="$RUNNER_TEMP/vibez-build.keychain-db"
+          KEYCHAIN_PASSWORD="$(openssl rand -hex 24)"
+          CERT_PATH="$RUNNER_TEMP/distribution.p12"
+          PROFILE_PATH="$RUNNER_TEMP/app-store.mobileprovision"
+
+          printf '%s' "$IOS_CERTIFICATE_BASE64" | base64 --decode > "$CERT_PATH"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security import "$CERT_PATH" -k "$KEYCHAIN_PATH" -P "$IOS_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security list-keychains -d user -s "$KEYCHAIN_PATH"
+
+          printf '%s' "$IOS_PROVISIONING_PROFILE_BASE64" | base64 --decode > "$PROFILE_PATH"
+          security cms -D -i "$PROFILE_PATH" > "$RUNNER_TEMP/profile.plist"
+          PROFILE_UUID=$(/usr/libexec/PlistBuddy -c 'Print :UUID' "$RUNNER_TEMP/profile.plist")
+          PROFILE_NAME=$(/usr/libexec/PlistBuddy -c 'Print :Name' "$RUNNER_TEMP/profile.plist")
+          mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
+          cp "$PROFILE_PATH" "$HOME/Library/MobileDevice/Provisioning Profiles/$PROFILE_UUID.mobileprovision"
+
+          export IOS_BUNDLE_ID IOS_TEAM_ID PROFILE_NAME
+          ruby -e 'p=ARGV[0]; s=File.read(p); s.gsub!(/PRODUCT_BUNDLE_IDENTIFIER = [^;]+;/, "PRODUCT_BUNDLE_IDENTIFIER = #{ENV.fetch("IOS_BUNDLE_ID")};"); s.gsub!(/DEVELOPMENT_TEAM = [^;]*;/, "DEVELOPMENT_TEAM = #{ENV.fetch("IOS_TEAM_ID")};"); s.gsub!(/CODE_SIGN_STYLE = Automatic;/, "CODE_SIGN_STYLE = Manual;"); s.gsub!(/CODE_SIGN_STYLE = Manual;/, "CODE_SIGN_STYLE = Manual; PROVISIONING_PROFILE_SPECIFIER = \"#{ENV.fetch("PROFILE_NAME")}\"; CODE_SIGN_IDENTITY = \"Apple Distribution\";"); File.write(p,s)' ios/Runner.xcodeproj/project.pbxproj
+
+          cat > "$RUNNER_TEMP/ExportOptions.plist" <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key><string>app-store-connect</string>
+            <key>teamID</key><string>$IOS_TEAM_ID</string>
+            <key>signingStyle</key><string>manual</string>
+            <key>provisioningProfiles</key>
+            <dict><key>$IOS_BUNDLE_ID</key><string>$PROFILE_NAME</string></dict>
+            <key>uploadSymbols</key><true/>
+            <key>stripSwiftSymbols</key><true/>
+          </dict>
+          </plist>
+          EOF
+
+          flutter build ipa --release --export-options-plist="$RUNNER_TEMP/ExportOptions.plist"
+
+      - name: Upload signed IPA
+        if: steps.signing.outputs.ready == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: vibez-ai-ipa
+          path: app/build/ios/ipa/*.ipa
+
+      - name: Build unsigned iOS preview
+        if: steps.signing.outputs.ready != 'true'
+        run: flutter build ios --release --no-codesign
+
+      - name: Upload unsigned iOS preview
+        if: steps.signing.outputs.ready != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: vibez-ios-unsigned-preview
+          path: app/build/ios/iphoneos/Runner.app
