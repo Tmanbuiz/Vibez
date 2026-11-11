@@ -221,7 +221,7 @@ async function revoice(env, req) {
   const sourceObject = await env.MEDIA.get(source.key);
   const singerObject = await env.MEDIA.get(singer.key);
   if (!sourceObject || !singerObject) return fail("Song or singer audio is missing", 404);
-  if (sourceObject.size > 150 * 1024 * 1024) return fail("Generated song is too large to convert", 413);
+  if (sourceObject.size > 40 * 1024 * 1024) return fail("Generated song is too large to convert (40 MB maximum)", 413);
 
   const serviceUrl = env.SINGING_SERVICE_URL.replace(/\/+$/, "");
   const form = new FormData();
