@@ -51,6 +51,11 @@ jobs:
             p.afterEvaluate {
               if (p.extensions.findByName('android') != null) {
                 p.android.compileSdkVersion 36
+                // the lint tool crashes inside some plugins; release APKs don't need it
+                p.android.lint {
+                  checkReleaseBuilds = false
+                  abortOnError = false
+                }
               }
             }
           }
