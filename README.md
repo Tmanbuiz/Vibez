@@ -11,7 +11,7 @@ npx wrangler login
 
 npx wrangler d1 create tmanvibez          # copy the database_id into wrangler.jsonc
 npx wrangler r2 bucket create tmanvibez-media
-npx wrangler d1 execute DB --remote --file schema.sql
+npx wrangler d1 execute tmanvibez --remote --file schema.sql
 
 npx wrangler secret put VENICE_API_KEY    # your Venice key
 npx wrangler secret put APP_TOKEN         # any long random string: this is your app login
@@ -54,7 +54,7 @@ Create a singer profile in the Voice screen with a clean 10–30 second singing 
 ## The app (Flutter: web, Android, iOS)
 
 Source is in `app/` (`lib/` + `pubspec.yaml`). GitHub Actions (`.github/workflows/build-app.yml`) generates the
-platform folders and builds on every push to `main`:
+platform folders and builds on pushes to `main` and this feature branch, and on pull requests into `main`:
 
 - **Android APK**: Actions tab → latest run → artifact `tmanvibez-ai-apk` → install on your phone
 - **Web**: artifact `tmanvibez-ai-web`, or deploy it with `npx wrangler pages deploy build/web --project-name tmanvibez`
