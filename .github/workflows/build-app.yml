@@ -6,6 +6,9 @@ on:
     paths: ['app/**', '.github/workflows/build-app.yml']
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -78,3 +81,14 @@ jobs:
         with:
           name: tmanvibez-ai-web
           path: app/build/web
+
+      - name: Publish APK as a GitHub Release
+        working-directory: .
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp app/build/app/outputs/flutter-apk/app-release.apk TmanVibezAI.apk
+          gh release delete latest --yes --cleanup-tag --repo ${{ github.repository }} || true
+          gh release create latest TmanVibezAI.apk --repo ${{ github.repository }} --target ${{ github.sha }} \
+            --title "TmanVibez AI (latest Android build)" \
+            --notes "Download TmanVibezAI.apk on your Android phone and install it. Built from ${{ github.sha }}."
