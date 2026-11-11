@@ -41,3 +41,17 @@ Images have no quote endpoint, so they are not capped.
 | GET | `/api/media/:id?token=` | stream a file (Range supported) |
 
 Only clone your own voice, or someone who has clearly agreed.
+
+## The app (Flutter: web, Android, iOS)
+
+Source is in `app/` (`lib/` + `pubspec.yaml`). GitHub Actions (`.github/workflows/build-app.yml`) generates the
+platform folders and builds on every push to `main`:
+
+- **Android APK**: Actions tab → latest run → artifact `tmanvibez-ai-apk` → install on your phone
+- **Web**: artifact `tmanvibez-ai-web`, or deploy it with `npx wrangler pages deploy build/web --project-name tmanvibez`
+
+First launch: open **Settings** (gear), enter your Worker URL and `APP_TOKEN`, tap *Save & test*.
+
+Screens: Music · Image · Video · Voice · Library. Music and video always show the price and ask before spending.
+
+iOS needs an Apple Developer account for signing, so it is not part of the automatic build yet.
