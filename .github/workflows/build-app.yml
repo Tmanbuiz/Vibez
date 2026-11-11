@@ -181,13 +181,23 @@ jobs:
           name: vibez-ai-ipa
           path: app/build/ios/ipa/*.ipa
 
-      - name: Build unsigned iOS preview
+      - name: Package an unsigned IPA for AltStore
         if: steps.signing.outputs.ready != 'true'
-        run: flutter build ios --release --no-codesign
+        run: |
+          flutter build ios --release --no-codesign
+          STAGING="$RUNNER_TEMP/vibez-ipa"
+          mkdir -p "$STAGING/Payload" build/ios
+          cp -R build/ios/iphoneos/Runner.app "$STAGING/Payload/Runner.app"
+          for nested in "$STAGING"/Payload/Runner.app/Frameworks/*; do
+            [[ -d "$nested" ]] || continue
+            /usr/bin/codesign --force --sign - "$nested"
+          done
+          /usr/bin/codesign --force --sign - "$STAGING/Payload/Runner.app"
+          (cd "$STAGING" && /usr/bin/zip -qry "$GITHUB_WORKSPACE/app/build/ios/VibezAI-AltStore.ipa" Payload)
 
-      - name: Upload unsigned iOS preview
+      - name: Upload IPA for AltStore
         if: steps.signing.outputs.ready != 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: vibez-ios-unsigned-preview
-          path: app/build/ios/iphoneos/Runner.app
+          name: vibez-ai-ipa
+          path: app/build/ios/VibezAI-AltStore.ipa
