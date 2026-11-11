@@ -40,6 +40,22 @@ jobs:
           sed -i 's#<application#<uses-permission android:name="android.permission.INTERNET"/>\n    <application#' android/app/src/main/AndroidManifest.xml
           sed -i 's#android:label="[^"]*"#android:label="TmanVibez AI"#' android/app/src/main/AndroidManifest.xml
 
+      # Some plugins are compiled against an older Android SDK than their own dependencies need.
+      # Force every Android module to compile against SDK 36.
+      - name: Gradle init script (compileSdk 36 everywhere)
+        working-directory: .
+        run: |
+          mkdir -p ~/.gradle/init.d
+          cat > ~/.gradle/init.d/compile-sdk.gradle <<'EOF'
+          allprojects { p ->
+            p.afterEvaluate {
+              if (p.extensions.findByName('android') != null) {
+                p.android.compileSdkVersion 36
+              }
+            }
+          }
+          EOF
+
       - run: flutter pub get
 
       - name: Build web
