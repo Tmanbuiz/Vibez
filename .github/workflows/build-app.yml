@@ -111,7 +111,7 @@ jobs:
           cache: true
 
       - name: Generate iOS project
-        run: flutter create --project-name tmanvibez_ai --org com.tmanvibez --platforms=ios .
+        run: flutter create --project-name tmanvibez_ai --org com.tmanvibez --platforms=android,ios .
 
       - name: Keep repository source files
         working-directory: .
