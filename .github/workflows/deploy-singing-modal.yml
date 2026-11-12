@@ -1,0 +1,48 @@
+name: Deploy singing service to Modal
+
+# Run this from the GitHub Actions tab (works from a phone). It needs three repository secrets:
+#   MODAL_TOKEN_ID, MODAL_TOKEN_SECRET  - create at modal.com > Settings > API Tokens
+#   SINGING_SERVICE_TOKEN               - any long random string; use the SAME value for the Worker
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Branch that contains singing-service/
+        default: feature/sing-in-my-voice
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
+      MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
+      SINGING_SERVICE_TOKEN: ${{ secrets.SINGING_SERVICE_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Check secrets are set
+        run: |
+          for v in MODAL_TOKEN_ID MODAL_TOKEN_SECRET SINGING_SERVICE_TOKEN; do
+            if [ -z "${!v}" ]; then echo "::error::Missing GitHub secret $v"; exit 1; fi
+          done
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - run: pip install modal
+
+      - name: Save the service token in Modal
+        run: modal secret create vibez-singing SINGING_SERVICE_TOKEN="$SINGING_SERVICE_TOKEN" --force
+
+      - name: Deploy
+        run: modal deploy singing-service/modal_app.py 2>&1 | tee deploy.log
+
+      - name: Show the service URL
+        run: |
+          URL=$(grep -Eo 'https://[A-Za-z0-9.-]+\.modal\.run' deploy.log | head -1)
+          echo "Singing service URL: $URL"
+          echo "### Singing service URL" >> "$GITHUB_STEP_SUMMARY"
+          echo "$URL" >> "$GITHUB_STEP_SUMMARY"
