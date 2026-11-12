@@ -32,6 +32,29 @@ docker run --rm --gpus all \
 
 The first startup downloads public SoulX model checkpoints into the mounted volume, then loads the model. Keep the service behind HTTPS when it is reachable from the internet. The unauthenticated /health endpoint reports readiness only; all job endpoints require a bearer token.
 
+## Run on Modal (recommended: pay only while converting)
+
+Modal gives you a GPU that switches off when idle. From the repository root, on a computer with Python:
+
+~~~sh
+pip install modal
+modal setup                      # opens the browser once to log in
+
+# make ONE token and keep it: the Worker needs the same value
+TOKEN=$(openssl rand -hex 32); echo "$TOKEN"
+modal secret create vibez-singing SINGING_SERVICE_TOKEN="$TOKEN"
+
+modal deploy singing-service/modal_app.py
+~~~
+
+`modal deploy` prints a URL like `https://tmanbuiz--vibez-singing-web.modal.run`. Put that URL in
+`SINGING_SERVICE_URL` in `worker/wrangler.jsonc`, then run `npx wrangler secret put SINGING_SERVICE_TOKEN`
+with the same token and `npx wrangler deploy`.
+
+Notes: the first conversion is slow (the model downloads once into a Modal volume, then loads). The GPU is
+an L4 and stays warm for 10 minutes after the last request. Jobs live on the container's disk, so keep the
+app open until a conversion finishes. Modal's free credits need a payment method added in the Modal dashboard.
+
 ## Connect the Cloudflare Worker
 
 Set SINGING_SERVICE_URL in worker/wrangler.jsonc to the HTTPS base URL of the GPU service, then add the same secret used above:
