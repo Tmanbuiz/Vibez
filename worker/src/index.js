@@ -2,7 +2,7 @@
 // Holds the Venice API key, enforces a per-job spend cap, polls async jobs,
 // stores finished media in R2 and the library in D1.
 
-const V = "https://api.venice.ai/api/v1";
+let V = "https://api.venice.ai/api/v1";
 const CLONE_MODEL = "tts-chatterbox-hd";
 const CORS = {
   "access-control-allow-origin": "*",
@@ -39,6 +39,7 @@ function authed(req, env, url) {
 
 export default {
   async fetch(req, env, ctx) {
+    if (env.VENICE_BASE_URL) V = env.VENICE_BASE_URL;
     if (req.method === "OPTIONS") return new Response(null, { headers: CORS });
     const url = new URL(req.url);
     const path = url.pathname;
@@ -322,9 +323,15 @@ async function pollRoute(env, ctx, id) {
   if (!r.ok) {
     if (r.status >= 500 || r.status === 429) return json({ ...view(it), note: "Venice busy, retrying" });
     const msg = (await r.text()).slice(0, 300);
-    await env.DB.prepare("update items set status='FAILED', meta=? where id=?")
+    // Another poll may have just collected the finished file (Venice then errors for us).
+    // Give it a moment to save, and only mark FAILED if the job is still unfinished.
+    await new Promise((res) => setTimeout(res, 1500));
+    const fresh = await env.DB.prepare("select * from items where id=?").bind(id).first();
+    if (fresh && fresh.status === "DONE") return json(view(fresh));
+    await env.DB.prepare("update items set status='FAILED', meta=? where id=? and status='PROCESSING'")
       .bind(JSON.stringify({ ...JSON.parse(it.meta || "{}"), error: msg }), id).run();
-    return json({ ...view(it), status: "FAILED", error: msg });
+    const after = (await env.DB.prepare("select * from items where id=?").bind(id).first()) || it;
+    return json(view(after));
   }
 
   let ct = r.headers.get("content-type") || "";
