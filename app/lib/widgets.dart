@@ -116,12 +116,32 @@ class MediaCard extends StatelessWidget {
       key: ValueKey('card-$id'),
       margin: const EdgeInsets.only(top: 12),
       padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(color: const Color(0xFF16161F), borderRadius: BorderRadius.circular(16)),
+      decoration: BoxDecoration(
+        color: const Color(0xFF14151F),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFF292838)),
+        boxShadow: const [BoxShadow(color: Color(0x16000000), blurRadius: 18, offset: Offset(0, 8))],
+      ),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(children: [
-          Icon(kindIcon(kind), size: 18, color: Colors.white54),
-          const SizedBox(width: 8),
-          Expanded(child: Text((item['title'] ?? '').toString(), maxLines: 2, overflow: TextOverflow.ellipsis)),
+          Container(
+            width: 34,
+            height: 34,
+            decoration: BoxDecoration(
+              color: const Color(0xFF261C37),
+              borderRadius: BorderRadius.circular(11),
+            ),
+            child: Icon(kindIcon(kind), size: 18, color: const Color(0xFFD6B5FF)),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              (item['title'] ?? '').toString(),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontWeight: FontWeight.w700, height: 1.2),
+            ),
+          ),
           if (cost is num) Text('\$${cost.toStringAsFixed(2)}', style: const TextStyle(color: Colors.white54)),
         ]),
         const SizedBox(height: 10),
@@ -203,7 +223,14 @@ class _AudioTileState extends State<AudioTile> {
     final max = dur.inMilliseconds > 0 ? dur.inMilliseconds.toDouble() : 1.0;
     final double val = pos.inMilliseconds.toDouble().clamp(0.0, max).toDouble();
     return Row(children: [
-      IconButton.filled(onPressed: _toggle, icon: Icon(playing ? Icons.pause : Icons.play_arrow)),
+      IconButton.filledTonal(
+        style: IconButton.styleFrom(
+          backgroundColor: const Color(0xFF35204B),
+          foregroundColor: const Color(0xFFE5C7FF),
+        ),
+        onPressed: _toggle,
+        icon: Icon(playing ? Icons.pause_rounded : Icons.play_arrow_rounded),
+      ),
       Expanded(
         child: Slider(
           value: val,

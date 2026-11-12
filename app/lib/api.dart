@@ -138,4 +138,24 @@ class Api {
       ..files.add(http.MultipartFile.fromBytes('file', bytes, filename: filename, contentType: _mime(filename)));
     _decode(await http.Response.fromStream(await req.send()));
   }
+
+  static Future<List<Map<String, dynamic>>> singers() async {
+    final j = await _get('/api/singers');
+    return (j as List).map((e) => Map<String, dynamic>.from(e as Map)).toList();
+  }
+
+  static Future<Map<String, dynamic>> revoice(String songId, String singerId) async =>
+      Map<String, dynamic>.from(await _post('/api/revoice', {'song_id': songId, 'singer_id': singerId}) as Map);
+
+  static Future<void> deleteSinger(String id) async {
+    _decode(await http.delete(_u('/api/singers/${Uri.encodeComponent(id)}'), headers: _h));
+  }
+
+  static Future<void> createSinger(String name, List<int> bytes, String filename) async {
+    final req = http.MultipartRequest('POST', _u('/api/singers'))
+      ..headers.addAll(_h)
+      ..fields['name'] = name
+      ..files.add(http.MultipartFile.fromBytes('file', bytes, filename: filename, contentType: _mime(filename)));
+    _decode(await http.Response.fromStream(await req.send()));
+  }
 }

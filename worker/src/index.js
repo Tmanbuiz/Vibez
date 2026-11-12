@@ -2,7 +2,7 @@
 // Holds the Venice API key, enforces a per-job spend cap, polls async jobs,
 // stores finished media in R2 and the library in D1.
 
-const V = "https://api.venice.ai/api/v1";
+let V = "https://api.venice.ai/api/v1";
 const CLONE_MODEL = "tts-chatterbox-hd";
 const CORS = {
   "access-control-allow-origin": "*",
@@ -18,7 +18,7 @@ const vAuth = (env) => ({ authorization: `Bearer ${env.VENICE_API_KEY}` });
 const vJson = (env) => ({ ...vAuth(env), "content-type": "application/json" });
 const pick = (o, keys) => Object.fromEntries(keys.filter((k) => o[k] !== undefined && o[k] !== "").map((k) => [k, o[k]]));
 const ext = (ct) =>
-  ({ "audio/mpeg": "mp3", "audio/wav": "wav", "audio/x-wav": "wav", "audio/flac": "flac", "audio/mp4": "m4a",
+  ({ "audio/mpeg": "mp3", "audio/wav": "wav", "audio/x-wav": "wav", "audio/flac": "flac", "audio/mp4": "m4a", "audio/x-m4a": "m4a",
      "video/mp4": "mp4", "image/webp": "webp", "image/png": "png", "image/jpeg": "jpg" })[ct.split(";")[0]] || "bin";
 
 const FIELDS = {
@@ -39,6 +39,7 @@ function authed(req, env, url) {
 
 export default {
   async fetch(req, env, ctx) {
+    if (env.VENICE_BASE_URL) V = env.VENICE_BASE_URL;
     if (req.method === "OPTIONS") return new Response(null, { headers: CORS });
     const url = new URL(req.url);
     const path = url.pathname;
@@ -56,6 +57,10 @@ export default {
       if (req.method === "GET" && path === "/api/voices") return await voicesList(env);
       if (req.method === "POST" && path === "/api/voices") return await voiceCreate(env, req);
       if (req.method === "DELETE" && (m = path.match(/^\/api\/voices\/(.+)$/))) return await voiceDelete(env, m[1]);
+      if (req.method === "GET" && path === "/api/singers") return await singersList(env);
+      if (req.method === "POST" && path === "/api/singers") return await singerCreate(env, req);
+      if (req.method === "DELETE" && (m = path.match(/^\/api\/singers\/(.+)$/))) return await singerDelete(env, m[1]);
+      if (req.method === "POST" && path === "/api/revoice") return await revoice(env, req);
       if (req.method === "POST" && path === "/api/speak") return await speak(env, req);
       if (req.method === "GET" && (m = path.match(/^\/api\/jobs\/([\w-]+)$/))) return await pollRoute(env, ctx, m[1]);
       if (req.method === "GET" && path === "/api/library") return await library(env, url);
@@ -170,6 +175,118 @@ async function voiceCreate(env, req) {
   return json({ id, name });
 }
 
+
+async function singersList(env) {
+  const { results } = await env.DB.prepare("select id,name,mime,created from singers order by created desc").all();
+  return json(results);
+}
+
+async function singerCreate(env, req) {
+  const fd = await req.formData();
+  const file = fd.get("file");
+  if (!file || typeof file === "string") return fail("No singing reference audio file");
+  const allowed = { wav: "audio/wav", mp3: "audio/mpeg", m4a: "audio/mp4", flac: "audio/flac" };
+  const suffix = String(file.name || "").split(".").pop().toLowerCase();
+  if (!allowed[suffix]) return fail("Use a WAV, MP3, M4A, or FLAC singing sample");
+  if (file.size <= 0 || file.size > 25 * 1024 * 1024) return fail("Singing sample must be under 25 MB");
+  const id = crypto.randomUUID();
+  const name = String(fd.get("name") || "My singing voice").trim().slice(0, 60) || "My singing voice";
+  const mime = file.type && file.type.startsWith("audio/") ? file.type.split(";")[0] : allowed[suffix];
+  const key = "singers/" + id + "." + ext(mime);
+  await env.MEDIA.put(key, await file.arrayBuffer(), { httpMetadata: { contentType: mime } });
+  await env.DB.prepare("insert into singers (id,name,key,mime,created) values (?,?,?,?,?)")
+    .bind(id, name, key, mime, Date.now()).run();
+  return json({ id, name, created: Date.now() });
+}
+
+async function singerDelete(env, id) {
+  id = decodeURIComponent(id);
+  const singer = await env.DB.prepare("select key from singers where id=?").bind(id).first();
+  if (singer && singer.key) await env.MEDIA.delete(singer.key);
+  await env.DB.prepare("delete from singers where id=?").bind(id).run();
+  return json({ ok: true });
+}
+
+async function revoice(env, req) {
+  if (!env.SINGING_SERVICE_URL || !env.SINGING_SERVICE_TOKEN) {
+    return fail("Configure SINGING_SERVICE_URL and SINGING_SERVICE_TOKEN to enable singing voice conversion", 503);
+  }
+  const body = await req.json();
+  if (!body.song_id || !body.singer_id) return fail("song_id and singer_id are required");
+  const source = await env.DB.prepare("select * from items where id=?").bind(String(body.song_id)).first();
+  if (!source || source.kind !== "music" || source.status !== "DONE" || !source.key) {
+    return fail("Choose a completed generated song");
+  }
+  const singer = await env.DB.prepare("select * from singers where id=?").bind(String(body.singer_id)).first();
+  if (!singer) return fail("Singing profile not found", 404);
+  const sourceObject = await env.MEDIA.get(source.key);
+  const singerObject = await env.MEDIA.get(singer.key);
+  if (!sourceObject || !singerObject) return fail("Song or singer audio is missing", 404);
+  if (sourceObject.size > 40 * 1024 * 1024) return fail("Generated song is too large to convert (40 MB maximum)", 413);
+
+  const serviceUrl = env.SINGING_SERVICE_URL.replace(/\/+$/, "");
+  const form = new FormData();
+  form.append("prompt_audio", new Blob([await singerObject.arrayBuffer()], { type: singer.mime || "audio/wav" }), "prompt." + ext(singer.mime || "audio/wav"));
+  form.append("target_audio", new Blob([await sourceObject.arrayBuffer()], { type: source.mime || "audio/mpeg" }), "target." + ext(source.mime || "audio/mpeg"));
+  const response = await fetch(serviceUrl + "/v1/jobs", {
+    method: "POST",
+    headers: { authorization: "Bearer " + env.SINGING_SERVICE_TOKEN },
+    body: form,
+  });
+  if (!response.ok) {
+    const message = (await response.text()).slice(0, 300);
+    return fail("Singing service rejected the request: " + message, response.status);
+  }
+  const serviceJob = await response.json();
+  if (!serviceJob.id) return fail("Singing service did not return a job ID", 502);
+
+  const id = crypto.randomUUID();
+  const title = "In " + singer.name + "'s voice: " + (source.title || "Generated song");
+  await insertItem(env, {
+    id, kind: "music", title, prompt: source.prompt, model: "soulx-singer-svc",
+    status: "PROCESSING", queue_id: serviceJob.id,
+    meta: { provider: "soulx-singer-svc", service_job_id: serviceJob.id, source_id: source.id, singer_id: singer.id },
+  });
+  return json({ id, status: "PROCESSING", title });
+}
+
+async function pollSingingJob(env, ctx, it, id, meta) {
+  if (!env.SINGING_SERVICE_URL || !env.SINGING_SERVICE_TOKEN) return fail("Singing service is not configured", 503);
+  const serviceUrl = env.SINGING_SERVICE_URL.replace(/\/+$/, "");
+  const headers = { authorization: "Bearer " + env.SINGING_SERVICE_TOKEN };
+  const serviceId = encodeURIComponent(meta.service_job_id || "");
+  if (!serviceId) return fail("Singing service job ID is missing", 500);
+
+  const statusResponse = await fetch(serviceUrl + "/v1/jobs/" + serviceId, { headers });
+  if (!statusResponse.ok) {
+    if (statusResponse.status >= 500 || statusResponse.status === 429) {
+      return json({ ...view(it), note: "Singing service busy; retrying" });
+    }
+    const message = (await statusResponse.text()).slice(0, 300);
+    await env.DB.prepare("update items set status='FAILED', meta=? where id=?")
+      .bind(JSON.stringify({ ...meta, error: "Singing service status check failed: " + message }), id).run();
+    return json({ ...view({ ...it, status: "FAILED", meta: JSON.stringify({ ...meta, error: "Singing service status check failed" }) }), status: "FAILED" });
+  }
+
+  const job = await statusResponse.json();
+  if (job.status === "FAILED") {
+    const error = String(job.error || "Singing voice conversion failed").slice(0, 300);
+    await env.DB.prepare("update items set status='FAILED', meta=? where id=?")
+      .bind(JSON.stringify({ ...meta, error }), id).run();
+    return json({ ...view({ ...it, status: "FAILED", meta: JSON.stringify({ ...meta, error }) }), status: "FAILED" });
+  }
+  if (job.status !== "DONE") return json({ ...view(it), status: "PROCESSING", progress: job.progress ?? null });
+
+  const audioResponse = await fetch(serviceUrl + "/v1/jobs/" + serviceId + "/audio", { headers });
+  if (!audioResponse.ok) return fail("Singing service finished but could not return the audio", 502);
+  const mime = audioResponse.headers.get("content-type") || "audio/wav";
+  const key = "music/" + id + "." + ext(mime);
+  await env.MEDIA.put(key, await audioResponse.arrayBuffer(), { httpMetadata: { contentType: mime } });
+  await env.DB.prepare("update items set status='DONE', key=?, mime=? where id=?").bind(key, mime, id).run();
+  ctx.waitUntil(fetch(serviceUrl + "/v1/jobs/" + serviceId, { method: "DELETE", headers }).catch(() => {}));
+  return json(view({ ...it, status: "DONE", key, mime }));
+}
+
 async function voiceDelete(env, id) {
   await env.DB.prepare("delete from voices where id=?").bind(decodeURIComponent(id)).run();
   return json({ ok: true });
@@ -195,6 +312,9 @@ async function pollRoute(env, ctx, id) {
   const it = await env.DB.prepare("select * from items where id=?").bind(id).first();
   if (!it) return fail("Job not found", 404);
   if (it.status === "DONE" || it.status === "FAILED") return json(view(it));
+  let meta = {};
+  try { meta = JSON.parse(it.meta || "{}"); } catch {}
+  if (meta.provider === "soulx-singer-svc") return await pollSingingJob(env, ctx, it, id, meta);
 
   const base = it.kind === "music" ? "audio" : "video";
   const r = await fetch(`${V}/${base}/retrieve`, {
@@ -203,9 +323,15 @@ async function pollRoute(env, ctx, id) {
   if (!r.ok) {
     if (r.status >= 500 || r.status === 429) return json({ ...view(it), note: "Venice busy, retrying" });
     const msg = (await r.text()).slice(0, 300);
-    await env.DB.prepare("update items set status='FAILED', meta=? where id=?")
+    // Another poll may have just collected the finished file (Venice then errors for us).
+    // Give it a moment to save, and only mark FAILED if the job is still unfinished.
+    await new Promise((res) => setTimeout(res, 1500));
+    const fresh = await env.DB.prepare("select * from items where id=?").bind(id).first();
+    if (fresh && fresh.status === "DONE") return json(view(fresh));
+    await env.DB.prepare("update items set status='FAILED', meta=? where id=? and status='PROCESSING'")
       .bind(JSON.stringify({ ...JSON.parse(it.meta || "{}"), error: msg }), id).run();
-    return json({ ...view(it), status: "FAILED", error: msg });
+    const after = (await env.DB.prepare("select * from items where id=?").bind(id).first()) || it;
+    return json(view(after));
   }
 
   let ct = r.headers.get("content-type") || "";

@@ -4,7 +4,9 @@
   "compatibility_date": "2025-09-01",
   "vars": {
     // Max USD any single music/video job may cost. Quotes above this are refused.
-    "MAX_JOB_USD": "1.00"
+    "MAX_JOB_USD": "1.00",
+    // Set this to the public HTTPS base URL of the SoulX GPU service.
+    "SINGING_SERVICE_URL": ""
   },
   "d1_databases": [
     { "binding": "DB", "database_name": "tmanvibez", "database_id": "REPLACE_AFTER_d1_create" }
